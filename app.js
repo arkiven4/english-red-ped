@@ -56,7 +56,7 @@ const DAY = 864e5;
 /* ================= storage ================= */
 const KEY = "redpen.v1";
 const fresh = () => ({ v: 1, topics: {}, unlocked: ["be_verb"], srs: {}, recent: [], xp: 0, day: today(), dayCorrect: 0, goal: 10,
-  streak: 0, lastLesson: "", lessons: 0, answered: 0, right: 0, theme: "system" });
+  streak: 0, lastLesson: "", lessons: 0, answered: 0, right: 0, theme: "light", themeChosen: true });
 function today(d = new Date()) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 const yesterday = () => today(new Date(Date.now() - DAY));
 let S = fresh();
@@ -65,6 +65,7 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch
 function rollDay() { if (S.day !== today()) { S.day = today(); S.dayCorrect = 0; save(); } }
 const T = id => S.topics[id] || (S.topics[id] = { m: 0, n: 0, c: 0 });
 const streakNow = () => (S.lastLesson === today() || S.lastLesson === yesterday()) ? S.streak : 0;
+if (!S.themeChosen) { S.theme = "light"; S.themeChosen = true; } // light is the default; older saves had "system"
 let themeSet = false;
 function applyTheme() { // "system" leaves the attribute alone so the phone (or host page) decides
   const root = document.documentElement;
@@ -527,9 +528,9 @@ function progressView() {
           h("div", { class: "bar" }, h("i", { style: `width:${un ? st.m : 0}%` }))); })),
     h("div", { class: "card" }, h("h2", {}, "Daily goal for the scroll pass"), h("p", {}, "Correct answers needed each day."),
       h("div", { class: "seg" }, [5, 10, 20, 30].map(g => h("button", { "aria-pressed": String(S.goal === g), onclick: () => { S.goal = g; save(); render(); } }, g)))),
-    h("div", { class: "card" }, h("h2", {}, "Appearance"), h("p", {}, "System follows your phone's dark mode setting."),
+    h("div", { class: "card" }, h("h2", {}, "Appearance"), h("p", {}, "Light is the default. System follows your phone's dark mode setting."),
       h("div", { class: "seg three" }, [["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
-        h("button", { "aria-pressed": String((S.theme || "system") === v), onclick: () => { S.theme = v; save(); applyTheme(); render(); } }, l)))),
+        h("button", { "aria-pressed": String((S.theme || "system") === v), onclick: () => { S.theme = v; S.themeChosen = true; save(); applyTheme(); render(); } }, l)))),
     h("div", { class: "card" }, h("h2", {}, "Backup"),
       h("p", {}, "Progress is stored in this browser. Clearing Chrome's site data deletes it, so export a backup now and then."),
       h("div", { class: "btnrow" }, h("button", { class: "btn ghost small", onclick: exportBackup }, "Export"), h("button", { class: "btn ghost small", onclick: () => fileIn.click() }, "Import")), fileIn,
