@@ -8,9 +8,9 @@ The mistakes are the ones Indonesian speakers often make in English: missing *-s
 
 ## How it works
 
-- **12 topics in 3 units** (am/is/are → comparatives). The next topic unlocks at 70% mastery; you can also jump ahead.
+- **30 topics**: a Foundations unit, then one unit per lesson of the *Basic English for IELTS and TOEFL* course (lessons 2–20). The next topic unlocks at 70% mastery. **Jump here** unlocks the lesson your class is on; lessons then focus on it.
 - **Mastery per topic** is a moving average of your recent answers (recent answers count more).
-- **Each lesson** has 12 questions: mostly your current topic, plus your weakest unlocked topics and mistakes that are due again.
+- **Each lesson** has 12 questions: mostly your current topic, plus your weakest *practiced* topics and mistakes that are due again.
 - **Mistakes come back** at the end of the lesson, then after 1, 3, 7 and 14 days.
 - **Scroll pass**: a daily goal of correct answers (5/10/20/30).
 - Progress is stored in the browser (`localStorage`). Use **Progress → Backup → Export** now and then.
@@ -45,7 +45,9 @@ npm run generate          # PER_MODE=320 by default: questions per topic per exe
 - `tools/generate.js` builds correct sentences with [jsRealB](https://github.com/rali-udem/jsRealB) (ISC license),
   then breaks them in one place with rules for each topic. Every generated sentence is checked against jsRealB's own output;
   anything that differs is dropped.
-- `tools/handwritten.js` holds questions the generator can't make well (uncountable nouns, *the*, special cases).
+- `tools/stage2.js` generates the course topics (lessons 2–20) from word banks; verb, plural and adjective forms come from jsRealB.
+- `tools/handwritten.js` and `tools/handwritten2.js` hold questions the generator can't make well (uncountable nouns, *the*, FANBOYS, the course's own practice items).
+- Question ids are hashes of the question text, so regenerating keeps saved progress pointing at the same questions.
 - After regenerating or changing any app file, **bump `VERSION` in `sw.js`**, otherwise installed apps keep the old cached version.
 
 Add `?test` to the URL to expose `window.__redpen` (lesson and progress state) for automated tests.

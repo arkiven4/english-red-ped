@@ -1,6 +1,6 @@
 // Red Pen service worker: works offline after the first visit.
 // Bump VERSION whenever app files or data/questions.json change, so phones download the new version.
-const VERSION = "redpen-2026-11-12c";
+const VERSION = "redpen-2026-11-12d";
 const SHELL = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "data/questions.json", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"];
 const FONTS = "redpen-fonts";
 

@@ -180,7 +180,7 @@ function valid(q) {
   if (!str(q.explain) || !str(q.topic)) return false;
   switch (q.type) {
     case "order": { const n = q.answer.split(/\s+/).length; return str(q.answer) && n >= 3 && n <= 13; }
-    case "fill": return str(q.sentence) && (q.sentence.match(/_{3}/g) || []).length === 1 && q.options.length >= 3
+    case "fill": return str(q.sentence) && (q.sentence.match(/_{3}/g) || []).length === 1 && q.options.length >= 2
       && q.options.every(str) && q.options.includes(q.answer) && uniq(q.options.map(o => o.toLowerCase())).length === q.options.length;
     case "spot":
       if (!str(q.sentence) || !str(q.corrected)) return false;
@@ -599,11 +599,17 @@ run("comparatives", () => {
   if (need("comparatives", "order")) add({ topic: "comparatives", type: "order", answer: text, explain: why });
 });
 
+/* ---------- stage 2: course lessons 2–20 ---------- */
+require("./stage2.js")({ add, need, run, pick, chance, shuffle, cap, join, R, silent, forms, SUBJECTS, spotFrom, spotOk, gap, count, uniq, rnd, PROPER, NUMS });
+
 /* ---------- hand-written ---------- */
-for (const q of require("./handwritten.js")) { const h = { ...q, hand: true, alts: q.alts || [] }; if (!add(h) && !seen.has(keyOf(h))) console.error("Hand-written item failed validation:", q.sentence || q.wrong || q.answer); }
+for (const q of [...require("./handwritten.js"), ...require("./handwritten2.js")]) { const h = { ...q, hand: true, alts: q.alts || [] }; if (!add(h) && !seen.has(keyOf(h))) console.error("Hand-written item failed validation:", q.sentence || q.wrong || q.answer); }
 
 /* ---------- output ---------- */
-items.forEach((q, i) => { q.id = q.topic.slice(0, 3) + i.toString(36); });
+// Stable ids: the same question keeps its id when the file is regenerated, so saved progress stays valid.
+const hash = str => { let h1 = 0x811c9dc5, h2 = 0x01000193; for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 ^ c, 2246822519); } return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36).slice(0, 3); };
+const ids = new Set();
+items.forEach(q => { let id = hash(keyOf(q)); while (ids.has(id)) id += "x"; ids.add(id); q.id = id; });
 const byTopic = {};
 for (const q of items) { byTopic[q.topic] = byTopic[q.topic] || {}; byTopic[q.topic][q.type] = (byTopic[q.topic][q.type] || 0) + 1; }
 console.table(byTopic);

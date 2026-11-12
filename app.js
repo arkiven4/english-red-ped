@@ -3,22 +3,43 @@
 "use strict";
 
 /* ================= curriculum ================= */
+// Units follow the "Basic English for IELTS and TOEFL" course. `lesson` is the course lesson number (null = foundations, before the course).
 const UNITS = [
-  { name: "Basics", topics: [
+  { lesson: null, name: "Foundations", topics: [
     ["be_verb", "am / is / are", "I am, she is, they are"],
     ["pronouns", "he / she, his / her", "Choose he or she, his or her"],
     ["articles", "a / an", "a car, an egg, an hour"],
     ["plurals", "Plurals", "two cats, three children"],
-    ["there_is", "There is / there are", "There are two cats, not “have two cats”"] ] },
-  { name: "Everyday actions", topics: [
+    ["there_is", "There is / there are", "There are two cats, not “have two cats”"],
+    ["questions", "Questions", "Where does she work?"] ] },
+  { lesson: 2, name: "Parts of speech", topics: [["adj_adv", "Adjective or adverb", "careful / carefully, good / well"]] },
+  { lesson: 3, name: "Sentence types", topics: [["conjunctions", "Compound and complex", "because, so, but, although"]] },
+  { lesson: 4, name: "Subject-verb agreement", topics: [["agreement", "Agreement", "Everyone likes, my friends like"]] },
+  { lesson: 5, name: "Present simple vs. continuous", topics: [
     ["pres_simple", "Present simple", "She works, they work"],
-    ["prepositions", "in / on / at", "on Monday, in May, at 7 a.m."],
-    ["pres_cont", "Present continuous", "She is working now"] ] },
-  { name: "Time and questions", topics: [
+    ["pres_cont", "Present continuous", "She is working now"],
+    ["pres_contrast", "Simple or continuous?", "every day vs. now, know (not knowing)"] ] },
+  { lesson: 6, name: "Past tense forms", topics: [
     ["past", "Past simple", "bought, went, didn't go"],
-    ["questions", "Questions", "Where does she work?"],
-    ["future", "Future", "will go, is going to go"],
-    ["comparatives", "Comparatives", "bigger, more expensive"] ] },
+    ["past_cont", "Past continuous", "I was reading when he called"] ] },
+  { lesson: 7, name: "Future forms", topics: [["future", "Future", "will, going to, I'm meeting"]] },
+  { lesson: 8, name: "Time expressions", topics: [["pres_perfect", "Present perfect", "has lived since 2015, have never been"]] },
+  { lesson: 9, name: "Relative clauses", topics: [["relative", "who / which / where / whose", "The teacher who helped me"]] },
+  { lesson: 10, name: "Conditionals", topics: [["conditionals", "Conditionals", "If it rains, I will… If I had…"]] },
+  { lesson: 11, name: "Passive voice", topics: [["passive", "Passive voice", "is made, was built, will be sent"]] },
+  { lesson: 12, name: "Articles", topics: [["the_zero", "the or no article", "the sun, education (no article)"]] },
+  { lesson: 13, name: "Quantifiers", topics: [["quantifiers", "many / much / few / little", "many people, little money"]] },
+  { lesson: 14, name: "Linking words", topics: [["linking", "Linking words", "however, therefore, moreover"]] },
+  { lesson: 15, name: "Parallel structures", topics: [["parallel", "Parallel structures", "not only… but also, both… and"]] },
+  { lesson: 16, name: "Pronoun reference", topics: [["demonstratives", "this / that / these / those", "these books, it / they"]] },
+  { lesson: 17, name: "Prepositions", topics: [
+    ["prepositions", "in / on / at", "on Monday, in May, at 7 a.m."],
+    ["collocations", "Word + preposition", "good at, interested in, apply for"] ] },
+  { lesson: 18, name: "Comparatives & superlatives", topics: [
+    ["comparatives", "Comparatives", "bigger, more expensive"],
+    ["superlatives", "Superlatives", "the biggest, the most expensive"] ] },
+  { lesson: 19, name: "Gerunds & infinitives", topics: [["gerund_inf", "Gerunds & infinitives", "enjoy reading, plan to travel"]] },
+  { lesson: 20, name: "Advanced passive", topics: [["passive_adv", "Advanced passive", "is being built, has been sent, had it repaired"]] },
 ];
 const TOPICS = UNITS.flatMap((u, ui) => u.topics.map(([id, name, sub]) => ({ id, name, sub, unit: ui })));
 const TOPIC = Object.fromEntries(TOPICS.map(t => [t.id, t]));
@@ -128,9 +149,15 @@ fetch("data/questions.json").then(r => { if (!r.ok) throw new Error(r.status); r
 
 /* ================= lesson building ================= */
 const unlockedTopics = () => TOPICS.filter(t => S.unlocked.includes(t.id));
-function frontier() { // first unlocked topic not yet strong, else the weakest unlocked one
+function frontier() {
+  // 1) the topic you picked last (e.g. this week's class lesson) until it is strong;
+  // 2) then the next unlocked, not-yet-strong topic after it in course order; 3) else the first one; 4) else your weakest.
   const u = unlockedTopics();
-  return u.find(t => T(t.id).m < UNLOCK_AT) || u.slice().sort((a, b) => T(a.id).m - T(b.id).m)[0];
+  const cur = S.current && TOPIC[S.current] && S.unlocked.includes(S.current) ? S.current : null;
+  if (cur && T(cur).m < UNLOCK_AT) return TOPIC[cur];
+  const from = cur ? TOPICS.indexOf(TOPIC[cur]) : -1;
+  return u.find(t => TOPICS.indexOf(t) > from && T(t.id).m < UNLOCK_AT) || u.find(t => T(t.id).m < UNLOCK_AT)
+    || u.filter(t => T(t.id).n).sort((a, b) => T(a.id).m - T(b.id).m)[0] || u[0];
 }
 function pickMode(topicId) {
   const t = T(topicId), modes = Object.keys(MODES).filter(m => POOL[topicId] && POOL[topicId][m] && POOL[topicId][m].length);
@@ -156,7 +183,7 @@ function buildLesson(focusId) {
   const due = Object.entries(S.srs).filter(([id, s]) => s.due <= now && BY_ID[id] && S.unlocked.includes(BY_ID[id].topic)).sort((a, b) => a[1].due - b[1].due);
   for (const [id] of due.slice(0, 2)) add(BY_ID[id], "review");
   // 2) weakest other unlocked topics
-  const others = unlockedTopics().filter(t => t.id !== focusId);
+  const others = unlockedTopics().filter(t => t.id !== focusId && T(t.id).n > 0); // never mix in topics you haven't started
   for (let i = 0; i < 3 && others.length; i++) { const t = weighted(others, t => 110 - T(t.id).m); add(pickQuestion(t.id, used), "mix"); }
   // 3) the rest from the focus topic
   let guard = 0;
@@ -174,6 +201,7 @@ window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); instal
 function startLesson(focusId) {
   if (!dataReady) return;
   const focus = focusId || frontier().id;
+  S.current = focus; save();
   const items = buildLesson(focus);
   L = { focus, items, i: 0, firstTry: 0, firstTotal: 0, xp: 0, combo: 0, retry: [], inRetry: false,
     startM: Object.fromEntries(TOPICS.map(t => [t.id, T(t.id).m])), startUnlocked: [...S.unlocked], earnedPass: false };
@@ -213,7 +241,7 @@ function check() {
       else if (q.correct) { ok = false; c.yours = `You marked “${c.words[c.sel]}” as wrong, but the sentence was correct.`; }
       else if (c.sel === c.wrongIdx) { c.stage = "fix"; render(); return; }
       else { ok = false; c.yours = `You marked “${c.words[c.sel]}”. The mistake was “${q.wrong_word}”.`; }
-    } else { ok = c.fixPick === q.fix; if (!ok) c.yours = `You chose “${c.fixPick}”.`; }
+    } else { ok = c.fixPick === q.fix; if (!ok) c.yours = `You chose “${c.fixPick === "—" ? "(no word)" : c.fixPick}”.`; }
   }
   if (q.type === "rewrite") {
     const v = c.text.trim(); c.yours = v;
@@ -278,14 +306,14 @@ function sheet(content) {
 function topicSheet(t) {
   const st = T(t.id), unlocked = S.unlocked.includes(t.id);
   sheet(close => unlocked ? [
-    h("h2", {}, t.name), h("p", {}, t.sub),
+    h("h2", {}, t.name), h("p", {}, (UNITS[t.unit].lesson ? `Course lesson ${UNITS[t.unit].lesson} · ` : "") + t.sub),
     h("p", {}, st.n ? `Mastery ${Math.round(st.m)}% · ${st.c} of ${st.n} correct` : "Not started yet."),
     h("div", { class: "row" }, h("button", { class: "btn", onclick: () => { close(); startLesson(t.id); } }, st.n ? "Practice" : "Start"),
       h("button", { class: "btn ghost", onclick: close }, "Cancel")),
   ] : [
     h("h2", {}, t.name + " is locked"),
-    h("p", {}, `It unlocks when the topic before it reaches ${UNLOCK_AT}% mastery. If you already know the earlier topics, you can jump ahead. Everything before this topic will unlock too.`),
-    h("div", { class: "row" }, h("button", { class: "btn", onclick: () => { const idx = TOPICS.indexOf(t); for (const x of TOPICS.slice(0, idx + 1)) if (!S.unlocked.includes(x.id)) S.unlocked.push(x.id); save(); close(); render(); toast(`${t.name} unlocked.`); } }, "Jump here"),
+    h("p", {}, `It unlocks when the topic before it reaches ${UNLOCK_AT}% mastery. If your class is already at ${UNITS[t.unit].lesson ? "Lesson " + UNITS[t.unit].lesson : "this point"}, jump here. Earlier topics unlock too, but they only appear in lessons after you practice them.`),
+    h("div", { class: "row" }, h("button", { class: "btn", onclick: () => { const idx = TOPICS.indexOf(t); for (const x of TOPICS.slice(0, idx + 1)) if (!S.unlocked.includes(x.id)) S.unlocked.push(x.id); S.current = t.id; save(); close(); render(); toast(`${t.name} unlocked. Lessons now focus on it.`); } }, "Jump here"),
       h("button", { class: "btn ghost", onclick: close }, "Cancel")),
   ]);
 }
@@ -327,7 +355,7 @@ function homeView() {
   else if (ft.m >= UNLOCK_AT) say = [`Everything you've unlocked is strong. Let's practice your weakest topic: `, h("b", {}, f.name), `.`];
   else say = [`Next up: `, h("b", {}, f.name), `. You're at ${Math.round(ft.m)}%. Get it to ${UNLOCK_AT}% to unlock the next topic.`];
   const path = UNITS.map((u, ui) => h("section", { class: "unit" },
-    h("div", { class: "unit-head" }, h("small", {}, `Unit ${ui + 1}`), h("strong", {}, u.name)),
+    h("div", { class: "unit-head" }, h("small", {}, u.lesson ? `Lesson ${u.lesson}` : "Before the course"), h("strong", {}, u.name)),
     h("div", { class: "nodes" }, TOPICS.filter(t => t.unit === ui).map(t => {
       const st = T(t.id), un = S.unlocked.includes(t.id), done = un && st.m >= UNLOCK_AT, cur = t.id === f.id;
       const pct = un ? Math.min(100, st.m) : 0, C = 2 * Math.PI * 33;
@@ -367,7 +395,7 @@ function questionBody() {
     else {
       out.push(h("p", { class: "subq" }, `Right, “${q.wrong_word}” is wrong. What should it be?`));
       out.push(h("div", { class: "choices" }, c.fixOpts.map(o => { let cls = "choice"; if (lock && o === q.fix) cls += " right"; else if (lock && o === c.fixPick) cls += " wrong";
-        return h("button", { class: cls, disabled: lock, "aria-pressed": String(c.fixPick === o), onclick: () => { c.fixPick = o; render(); } }, o); })));
+        return h("button", { class: cls, disabled: lock, "aria-pressed": String(c.fixPick === o), onclick: () => { c.fixPick = o; render(); } }, o === "—" ? "(no word)" : o); })));
     }
   }
   if (q.type === "rewrite") {
