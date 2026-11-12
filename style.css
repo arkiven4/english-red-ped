@@ -119,7 +119,7 @@ button:disabled { cursor: default; }
 
 /* ---------- bottom nav ---------- */
 .spacer { flex: 1; min-height: 24px; }
-.nav { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: var(--bg); border-top: 2px solid var(--line);
+.nav { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: var(--bg); border-top: 2px solid var(--line);
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)); margin-top: 16px; z-index: 5; }
 .nav button { display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: 2px solid transparent; border-radius: 12px; padding: 6px; font-weight: 900; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .nav button svg { width: 26px; height: 26px; }

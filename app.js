@@ -136,6 +136,7 @@ const ICON = {
   lock: `<svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" stroke="currentColor" stroke-width="2.6" fill="none"/></svg>`,
   crown: `<svg viewBox="0 0 24 24"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z" fill="currentColor"/></svg>`,
   path: `<svg viewBox="0 0 24 24"><circle cx="7" cy="6" r="3" fill="currentColor"/><circle cx="17" cy="12" r="3" fill="currentColor"/><circle cx="8" cy="19" r="3" fill="currentColor"/><path d="M9 8l6 3M15 14l-5 3" stroke="currentColor" stroke-width="2" fill="none"/></svg>`,
+  target: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></svg>`,
   chart: `<svg viewBox="0 0 24 24"><rect x="4" y="12" width="4" height="8" rx="1.5" fill="currentColor"/><rect x="10" y="7" width="4" height="13" rx="1.5" fill="currentColor"/><rect x="16" y="3" width="4" height="17" rx="1.5" fill="currentColor"/></svg>`,
 };
 const icon = n => h("span", { html: ICON[n], style: "display:contents" });
@@ -159,15 +160,17 @@ function frontier() {
   return u.find(t => TOPICS.indexOf(t) > from && T(t.id).m < UNLOCK_AT) || u.find(t => T(t.id).m < UNLOCK_AT)
     || u.filter(t => T(t.id).n).sort((a, b) => T(a.id).m - T(b.id).m)[0] || u[0];
 }
-function pickMode(topicId) {
+// How often you miss a question type (0 = never, 1 = always); 0.5 until there are answers.
+const modeMiss = m => { const s = (S.modeStats || {})[m] || { n: 0, c: 0 }; return 1 - (s.c + 1) / (s.n + 2); };
+function pickMode(topicId, weakBias) {
   const t = T(topicId), modes = Object.keys(MODES).filter(m => POOL[topicId] && POOL[topicId][m] && POOL[topicId][m].length);
   const w = t.n < 8 ? { fill: 3, order: 3, spot: 1.2, rewrite: 0.6 } : t.m > 55 ? { fill: 1, order: 1, spot: 1.3, rewrite: 1.6 } : { fill: 1.3, order: 1.2, spot: 1.2, rewrite: 1 };
-  return weighted(modes, m => w[m]);
+  return weighted(modes, m => weakBias ? (0.4 + 3 * modeMiss(m)) : w[m]);
 }
-function pickQuestion(topicId, used) {
+function pickQuestion(topicId, used, weakBias) {
   const recent = new Set(S.recent);
   for (let tries = 0; tries < 30; tries++) {
-    const mode = pickMode(topicId), list = POOL[topicId][mode];
+    const mode = pickMode(topicId, weakBias), list = POOL[topicId][mode];
     const q = list[rand(list.length)];
     if (used.has(q.id)) continue;
     if (recent.has(q.id) && tries < 25) continue;
@@ -192,18 +195,35 @@ function buildLesson(focusId) {
   return [...focus.slice(0, 2), ...shuffle([...focus.slice(2), ...rest])];
 }
 
+// Practice tab: random topics, weighted toward weak topics and weak question types.
+function buildMix(kind) {
+  const used = new Set(), out = [];
+  const add = (q, tag) => { if (q && !used.has(q.id)) { used.add(q.id); out.push({ q, tag }); } };
+  const mistakes = Object.entries(S.srs).filter(([id]) => BY_ID[id]).sort((a, b) => a[1].due - b[1].due).map(([id]) => BY_ID[id]);
+  if (kind === "mistakes") { for (const q of mistakes.slice(0, LESSON_SIZE)) add(q, "review"); return shuffle(out); }
+  const now = Date.now();
+  for (const q of mistakes.filter(q => S.srs[q.id].due <= now).slice(0, 3)) add(q, "review");
+  const practiced = TOPICS.filter(t => T(t.id).n > 0 && POOL[t.id]);
+  let guard = 0;
+  while (practiced.length && out.length < LESSON_SIZE && guard++ < 200) {
+    const t = weighted(practiced, t => Math.pow(105 - T(t.id).m, 1.6)); // weaker topic → much more likely
+    add(pickQuestion(t.id, used, true), "mix");
+  }
+  return shuffle(out);
+}
+
 /* ================= app state ================= */
 let view = "home"; // home | lesson | result | progress
 let L = null;      // current lesson
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; if (view === "progress") render(); });
 
-function startLesson(focusId) {
+function startLesson(focusId, kind) {
   if (!dataReady) return;
-  const focus = focusId || frontier().id;
-  S.current = focus; save();
-  const items = buildLesson(focus);
-  L = { focus, items, i: 0, firstTry: 0, firstTotal: 0, xp: 0, combo: 0, retry: [], inRetry: false,
+  let focus = null, items;
+  if (kind) { items = buildMix(kind); if (!items.length) return toast("Nothing to practice yet."); }
+  else { focus = focusId || frontier().id; S.current = focus; save(); items = buildLesson(focus); }
+  L = { focus, kind, from: view === "practice" ? "practice" : "home", items, i: 0, firstTry: 0, firstTotal: 0, xp: 0, combo: 0, retry: [], inRetry: false,
     startM: Object.fromEntries(TOPICS.map(t => [t.id, T(t.id).m])), startUnlocked: [...S.unlocked], earnedPass: false };
   newQuestion(); view = "lesson"; render();
 }
@@ -257,6 +277,7 @@ function grade(ok) {
     const t = T(q.topic); t.n++; if (ok) t.c++;
     t.m = Math.round((t.m + ALPHA * ((ok ? 100 : 0) - t.m)) * 10) / 10;
     S.answered++; if (ok) S.right++;
+    const ms = (S.modeStats = S.modeStats || {})[q.type] || (S.modeStats[q.type] = { n: 0, c: 0 }); ms.n++; if (ok) ms.c++;
     L.firstTotal++; if (ok) L.firstTry++;
     if (!ok) L.retry.push({ q, tag: c.tag, retry: true });
   }
@@ -344,6 +365,7 @@ function passCard() {
 function nav() {
   return h("nav", { class: "nav" },
     h("button", { "aria-current": view === "home" ? "page" : null, onclick: () => { view = "home"; render(); } }, icon("path"), "Learn"),
+    h("button", { "aria-current": view === "practice" ? "page" : null, onclick: () => { view = "practice"; render(); window.scrollTo(0, 0); } }, icon("target"), "Practice"),
     h("button", { "aria-current": view === "progress" ? "page" : null, onclick: () => { view = "progress"; render(); } }, icon("chart"), "Progress"));
 }
 function homeView() {
@@ -444,7 +466,8 @@ function lessonView() {
 }
 function resultView() {
   const acc = L.firstTotal ? Math.round(L.firstTry / L.firstTotal * 100) : 0;
-  const t = TOPIC[L.focus], before = Math.round(L.startM[L.focus]), after = Math.round(T(L.focus).m);
+  const t = L.focus ? TOPIC[L.focus] : null, before = t ? Math.round(L.startM[L.focus]) : 0, after = t ? Math.round(T(L.focus).m) : 0;
+  const nTopics = new Set(L.items.map(x => x.q.topic)).size;
   const newly = S.unlocked.filter(id => !L.startUnlocked.includes(id)).map(id => TOPIC[id].name);
   return h("div", { class: "result" },
     nibEl("happy"),
@@ -452,11 +475,37 @@ function resultView() {
     h("div", { class: "tiles3" },
       h("div", { class: "t3 xp" }, h("small", {}, "XP"), h("b", {}, "+" + L.xp)),
       h("div", { class: "t3 acc" }, h("small", {}, "First try"), h("b", {}, acc + "%")),
-      h("div", { class: "t3 mas" }, h("small", {}, t.name.length > 14 ? "Mastery" : t.name), h("b", {}, `${before}→${after}`))),
+      t ? h("div", { class: "t3 mas" }, h("small", {}, t.name.length > 14 ? "Mastery" : t.name), h("b", {}, `${before}→${after}`))
+        : h("div", { class: "t3 mas" }, h("small", {}, "Topics"), h("b", {}, nTopics))),
     newly.length ? h("div", { class: "unlock" }, "New topic unlocked: " + newly.join(", ")) : null,
     L.earnedPass ? h("div", { class: "earned" }, `Scroll pass earned: ${S.goal} correct answers today. Enjoy 15 minutes, then come back.`) : null,
     h("div", { class: "spacer" }),
-    h("button", { class: "btn", onclick: () => { L = null; view = "home"; render(); window.scrollTo(0, 0); } }, "Continue"));
+    h("button", { class: "btn", onclick: () => { view = L.from || "home"; L = null; render(); window.scrollTo(0, 0); } }, "Continue"));
+}
+function practiceView() {
+  const practiced = TOPICS.filter(t => T(t.id).n > 0).sort((a, b) => T(a.id).m - T(b.id).m);
+  const nMist = Object.keys(S.srs).filter(id => BY_ID[id]).length;
+  const modes = Object.keys(MODES).map(m => ({ m, s: (S.modeStats || {})[m] || { n: 0, c: 0 } }));
+  const known = modes.filter(x => x.s.n >= 5).sort((a, b) => a.s.c / a.s.n - b.s.c / b.s.n);
+  const head = [topbar(), h("h1", { class: "page-title" }, "Practice")];
+  if (!practiced.length) return [...head,
+    h("div", { class: "hero" }, nibEl("idle"), h("div", { class: "bubble" }, "Finish one lesson in Learn first. I need to see some answers before I can find your weak spots.")),
+    h("button", { class: "btn", onclick: () => { view = "home"; render(); } }, "Go to Learn"), h("div", { class: "spacer" }), nav()];
+  const weakest = practiced[0];
+  const say = [`This mix jumps between random topics, mostly the ones you get wrong. Weakest right now: `, h("b", {}, weakest.name), ` (${Math.round(T(weakest.id).m)}%)`,
+    known.length && known[0].s.c / known[0].s.n < 0.85 ? [`. You miss `, h("b", {}, MODES[known[0].m].label), ` questions most, so you'll get more of those.`] : "."];
+  return [...head,
+    h("div", { class: "hero" }, nibEl("idle"), h("div", { class: "bubble" }, say)),
+    h("div", { class: "row", style: "display:grid;gap:12px" },
+      h("button", { class: "btn", onclick: () => startLesson(null, "weak"), disabled: !dataReady }, "Weak-spot mix"),
+      h("button", { class: "btn ghost", onclick: () => startLesson(null, "mistakes"), disabled: !dataReady || !nMist }, nMist ? `Review my mistakes (${Math.min(nMist, LESSON_SIZE)})` : "No mistakes to review")),
+    h("div", { class: "card" }, h("h2", {}, "Your weak spots"), h("p", {}, "Only topics you have practiced. The weaker a topic, the more often it appears in the mix."),
+      practiced.slice(0, 6).map(t => { const st = T(t.id); return h("div", { class: "trow " + level(st.m) },
+        h("strong", {}, t.name), h("span", { class: "pct" }, Math.round(st.m) + "%"), h("div", { class: "bar" }, h("i", { style: `width:${st.m}%` }))); })),
+    h("div", { class: "card" }, h("h2", {}, "Question types"), h("p", {}, "Correct on the first try."),
+      modes.map(({ m, s }) => { const pct = s.n ? Math.round(s.c / s.n * 100) : 0; return h("div", { class: "trow " + (s.n ? level(pct) : "locked") },
+        h("strong", {}, MODES[m].label), h("span", { class: "pct" }, s.n ? `${pct}% · ${s.n}` : "no answers yet"), h("div", { class: "bar" }, h("i", { style: `width:${pct}%` }))); })),
+    h("div", { class: "spacer" }), nav()];
 }
 function progressView() {
   const acc = S.answered ? Math.round(S.right / S.answered * 100) : 0;
@@ -516,6 +565,7 @@ function render() {
   if (view === "lesson" && L) content = lessonView();
   else if (view === "result" && L) content = resultView();
   else if (view === "progress") content = progressView();
+  else if (view === "practice") content = practiceView();
   else { view = "home"; content = homeView(); }
   app.replaceChildren(...[content].flat(4));
   if (view === "lesson" && L.cur.done) { const b = $("#continue"); b && b.focus({ preventScroll: true }); }
@@ -525,7 +575,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter") { e.preventDefault(); if (L.cur.done) next(); else check(); }
 });
 
-if (/[?&]test\b/.test(location.search)) window.__redpen = { get L() { return L; }, get S() { return S; } };
+if (/[?&]test\b/.test(location.search)) window.__redpen = { get L() { return L; }, get S() { return S; }, buildMix };
 applyTheme(); rollDay(); render();
 if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
