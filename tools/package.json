@@ -1,0 +1,7 @@
+{
+  "name": "red-pen-tools",
+  "private": true,
+  "description": "Builds data/questions.json for the Red Pen app",
+  "scripts": { "generate": "node generate.js" },
+  "devDependencies": { "jsrealb": "5.3.0" }
+}
