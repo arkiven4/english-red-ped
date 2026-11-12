@@ -1,34 +1,34 @@
-/* Red Pen — one phone-width column. Ink-blue buttons, red pen for the brand and for mistakes, green for correct. */
+/* Red Pen — one phone-width column. Teal buttons and path, red pen for the brand and for mistakes, green for correct, amber for XP. */
 :root {
-  --bg: #f5f6fb; --surface: #ffffff; --surface-2: #eef1f8; --ink: #1d2647; --muted: #646d88; --line: #dce1ee;
+  --bg: #f3f7f7; --surface: #ffffff; --surface-2: #e6eeee; --ink: #15292b; --muted: #5a6f71; --line: #d2dfdf;
   --brand: #e2452f; --brand-dark: #b3301c; --brand-soft: #fde9e5;
-  --primary: #2f4cb9; --primary-dark: #20368c; --on-primary: #ffffff;
-  --good: #1f9a66; --good-dark: #157049; --good-soft: #dcf4e8;
+  --primary: #0f8b8d; --primary-dark: #0a6466; --on-primary: #ffffff;
+  --good: #2f9e4c; --good-dark: #1f7636; --good-soft: #e0f3e4;
   --bad: #d63a29; --bad-dark: #a32819; --bad-soft: #fde6e2;
-  --warn: #d58a0c; --warn-soft: #fdf0d8;
-  --lock: #b9c0d3;
+  --warn: #e08a1e; --warn-dark: #a9620a; --warn-soft: #fdefdb;
+  --lock: #b7c6c7;
   --f-ui: "Nunito", "Segoe UI", system-ui, sans-serif;
   --f-pen: "Caveat", "Segoe Print", "Comic Sans MS", cursive;
   --radius: 16px;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #121726; --surface: #1a2033; --surface-2: #232b42; --ink: #e8ecf7; --muted: #9ba5c0; --line: #2d3753;
+  --bg: #0f1a1c; --surface: #16262a; --surface-2: #1f3236; --ink: #e3eeee; --muted: #92a8aa; --line: #284045;
   --brand: #ff6a52; --brand-dark: #c74431; --brand-soft: #3b2025;
-  --primary: #7b97ff; --primary-dark: #4e68cc; --on-primary: #0e1428;
-  --good: #49cf92; --good-dark: #2a9a67; --good-soft: #15302a;
+  --primary: #33c2bf; --primary-dark: #1b8784; --on-primary: #05211f;
+  --good: #5ccf78; --good-dark: #2f9549; --good-soft: #163023;
   --bad: #ff6f5c; --bad-dark: #c4473a; --bad-soft: #3a1f22;
-  --warn: #f2b247; --warn-soft: #382c16;
-  --lock: #3d4762;
+  --warn: #f2a541; --warn-dark: #b06f14; --warn-soft: #33281a;
+  --lock: #34494d;
   color-scheme: dark;
 } }
 :root[data-theme="dark"] {
-  --bg: #121726; --surface: #1a2033; --surface-2: #232b42; --ink: #e8ecf7; --muted: #9ba5c0; --line: #2d3753;
+  --bg: #0f1a1c; --surface: #16262a; --surface-2: #1f3236; --ink: #e3eeee; --muted: #92a8aa; --line: #284045;
   --brand: #ff6a52; --brand-dark: #c74431; --brand-soft: #3b2025;
-  --primary: #7b97ff; --primary-dark: #4e68cc; --on-primary: #0e1428;
-  --good: #49cf92; --good-dark: #2a9a67; --good-soft: #15302a;
+  --primary: #33c2bf; --primary-dark: #1b8784; --on-primary: #05211f;
+  --good: #5ccf78; --good-dark: #2f9549; --good-soft: #163023;
   --bad: #ff6f5c; --bad-dark: #c4473a; --bad-soft: #3a1f22;
-  --warn: #f2b247; --warn-soft: #382c16;
-  --lock: #3d4762;
+  --warn: #f2a541; --warn-dark: #b06f14; --warn-soft: #33281a;
+  --lock: #34494d;
   color-scheme: dark;
 }
 
@@ -104,7 +104,7 @@ button:disabled { cursor: default; }
 .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 .ring .disc { position: absolute; inset: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 5px 0 var(--primary-dark); display: grid; place-items: center; color: var(--on-primary); }
 .ring .disc svg { position: static; transform: none; width: 26px; height: 26px; }
-.node.done .disc { background: var(--warn); box-shadow: 0 5px 0 #a86a05; color: #fff; }
+.node.done .disc { background: var(--warn); box-shadow: 0 5px 0 var(--warn-dark); color: #fff; }
 .node.locked .disc { background: var(--lock); box-shadow: 0 5px 0 var(--line); color: var(--surface); }
 .node.current .disc { animation: pulse 1.8s ease-in-out infinite; }
 @keyframes pulse { 50% { transform: scale(1.07); } }
@@ -219,6 +219,7 @@ textarea:focus { border-color: var(--primary); outline: none; }
 .trow.weak .bar > i { background: var(--bad); } .trow.learning .bar > i { background: var(--warn); } .trow.strong .bar > i { background: var(--good); }
 .trow.locked { opacity: .55; }
 .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
 .seg button { min-height: 46px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface); font-weight: 900; box-shadow: 0 3px 0 var(--line); }
 .seg button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); box-shadow: 0 3px 0 var(--primary); }
 .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
