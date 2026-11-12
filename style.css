@@ -11,7 +11,7 @@
   --f-pen: "Caveat", "Segoe Print", "Comic Sans MS", cursive;
   --radius: 16px;
 }
-@media (prefers-color-scheme: dark) { :root {
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #121726; --surface: #1a2033; --surface-2: #232b42; --ink: #e8ecf7; --muted: #9ba5c0; --line: #2d3753;
   --brand: #ff6a52; --brand-dark: #c74431; --brand-soft: #3b2025;
   --primary: #7b97ff; --primary-dark: #4e68cc; --on-primary: #0e1428;
@@ -21,6 +21,16 @@
   --lock: #3d4762;
   color-scheme: dark;
 } }
+:root[data-theme="dark"] {
+  --bg: #121726; --surface: #1a2033; --surface-2: #232b42; --ink: #e8ecf7; --muted: #9ba5c0; --line: #2d3753;
+  --brand: #ff6a52; --brand-dark: #c74431; --brand-soft: #3b2025;
+  --primary: #7b97ff; --primary-dark: #4e68cc; --on-primary: #0e1428;
+  --good: #49cf92; --good-dark: #2a9a67; --good-soft: #15302a;
+  --bad: #ff6f5c; --bad-dark: #c4473a; --bad-soft: #3a1f22;
+  --warn: #f2b247; --warn-soft: #382c16;
+  --lock: #3d4762;
+  color-scheme: dark;
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -67,7 +77,9 @@ button:disabled { cursor: default; }
 .pass.earned .bar > i { background: var(--good); }
 .pass-note { font-size: 14px; color: var(--muted); margin: 0; }
 .pass.earned .pass-note { color: var(--good-dark); font-weight: 800; }
-@media (prefers-color-scheme: dark) { .pass.earned .pass-note { color: var(--good); } }
+.pass.earned .pass-note { color: var(--good-dark); }
+:root[data-theme="dark"] .pass.earned .pass-note { color: var(--good); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pass.earned .pass-note { color: var(--good); } }
 
 /* ---------- hero ---------- */
 .hero { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: center; padding: 14px 0 6px; }
