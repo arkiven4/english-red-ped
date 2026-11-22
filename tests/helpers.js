@@ -15,8 +15,8 @@ async function serve() {
 const launch = () => chromium.launch({ executablePath: process.env.CHROMIUM || "/usr/bin/chromium" });
 
 // Phone-sized context; collects console errors.
-async function phone(browser, { dark = false, storage } = {}) {
-  const ctx = await browser.newContext({ viewport: { width: 393, height: 851 }, deviceScaleFactor: 2, colorScheme: dark ? "dark" : "light", serviceWorkers: "block" });
+async function phone(browser, { dark = false, storage, sw = false } = {}) {
+  const ctx = await browser.newContext({ viewport: { width: 393, height: 851 }, deviceScaleFactor: 2, colorScheme: dark ? "dark" : "light", serviceWorkers: sw ? "allow" : "block" });
   if (storage) await ctx.addInitScript(s => { if (!localStorage.getItem("redpen.v1")) localStorage.setItem("redpen.v1", s); }, JSON.stringify(storage));
   const page = await ctx.newPage();
   page.errors = [];

@@ -43,7 +43,7 @@ const V1 = { v: 1, topics: { be_verb: { m: 72, n: 40, c: 30 } }, unlocked: ["be_
       assert.equal((await page.locator(".stat.xp").textContent()).trim(), String(s1.xp));
 
       // Progress: no cloud card without a Firebase config, no horizontal scroll
-      await page.getByRole("button", { name: "Progress" }).click();
+      await page.getByRole("button", { name: "Progress", exact: true }).click();
       assert.equal(await page.locator(".card.cloud").count(), 0);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, "no horizontal scroll");
       await page.screenshot({ path: path.join(os.tmpdir(), `redpen-progress-${dark ? "dark" : "light"}.png`), fullPage: true });

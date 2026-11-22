@@ -3,9 +3,10 @@
   "private": true,
   "scripts": {
     "unit": "node --test merge.test.js",
-    "e2e": "node e2e-offline.js && npx -y firebase-tools@14 emulators:exec --project demo-redpen --config ../firebase/firebase.json --only auth,firestore 'node e2e-sync.js && node rules.test.js'"
+    "e2e": "node e2e-offline.js && npx -y firebase-tools@15 emulators:exec --project demo-redpen --config ../firebase/firebase.json --only auth,firestore 'node e2e-sync.js && node rules.test.js'"
   },
   "devDependencies": {
+    "firebase": "^13.2.0",
     "playwright-core": "^1.50.0"
   }
 }

@@ -628,8 +628,8 @@ function progressView() {
 function cloudCard() {
   if (!sync.on) return null;
   if (!sync.user) return h("div", { class: "card cloud" }, h("h2", {}, "Cloud backup"),
-    h("p", {}, "Sign in to back up your progress and keep your phone, laptop and PC in sync. Without signing in, everything stays on this device."),
-    h("button", { class: "btn small", onclick: signIn, disabled: sync.busy }, sync.busy ? "Signing in…" : "Sign in with Google to back up and sync"),
+    h("p", {}, "Sign in with Google to back up your progress and keep your phone, laptop and PC in sync. Without signing in, everything stays on this device."),
+    h("button", { class: "btn small", onclick: signIn, disabled: sync.busy }, sync.busy ? "Signing in…" : "Sign in with Google"),
     sync.status === "error" ? h("p", { class: "sync-note" }, sync.msg) : null);
   const st = sync.status, when = ago(sync.last);
   const label = st === "syncing" ? "Syncing…" : st === "synced" ? `Synced ${when}` : st === "offline" ? `Offline. Last synced ${when}. It will sync when you're back online.`
