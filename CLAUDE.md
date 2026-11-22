@@ -13,7 +13,7 @@ Offline-capable PWA (plain HTML/CSS/JS, no build step) hosted on GitHub Pages (h
 
 ## Files
 - `index.html`, `style.css`, `app.js`: the whole app. `app.js` is one IIFE: curriculum (`UNITS`), storage (`S`, localStorage key `redpen.v1`), lesson building, views (home/Learn, practice, lesson, result, progress), Nib mascot SVG.
-- `merge.js`: pure state migration + merge used by cloud sync (works in browser and Node). Tests: `node --test tests/`.
+- `merge.js`: pure state migration + merge used by cloud sync (works in browser and Node). Tests: `node --test tests/*.test.js`.
 - `sync.js`: Firebase glue, loaded lazily with `import()` only when signed in or when the user taps Sign in. Firebase SDK is pinned (gstatic CDN) and cached by `sw.js`.
 - `firebase/`: Firestore security rules + emulator config. Setup steps: `docs/firebase-setup.md`.
 - `sw.js`: service worker. **Bump `VERSION` whenever any app file or the data changes**, or installed apps keep the old cache.
