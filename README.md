@@ -14,7 +14,25 @@ The mistakes are the ones Indonesian speakers often make in English: missing *-s
 - **Practice tab**: a *weak-spot mix* of random topics, weighted toward your weakest practiced topics and the question types you miss most, plus a *review my mistakes* lesson.
 - **Mistakes come back** at the end of the lesson, then after 1, 3, 7 and 14 days.
 - **Scroll pass**: a daily goal of correct answers (5/10/20/30).
-- Progress is stored in the browser (`localStorage`). Use **Progress → Backup → Export** now and then.
+- Progress is stored in the browser (`localStorage`). Use **Progress → Backup file → Export** now and then.
+- **Cloud backup and sync (optional):** sign in with Google in the Progress tab to keep the phone, laptop and PC in sync. Without signing in, the app works exactly as before and never loads Firebase.
+
+## Cloud backup and sync
+
+Progress syncs through Firebase (Google sign-in + Firestore, free Spark plan). **Setup steps: [docs/firebase-setup.md](docs/firebase-setup.md).**
+
+- One document per user: `users/{uid}` = `{ state, schema, updatedAt }`. `state` is the progress as a JSON string.
+- Security rules: [`firebase/firestore.rules`](firebase/firestore.rules). Only the signed-in owner can read or write their document.
+- Each sync reads the document, merges it with local progress and writes the result back in one transaction. The merge (`merge.js`) never overwrites blindly:
+  - counters (XP, lessons, answers) are kept per device and added up;
+  - per topic, the version with more answers wins;
+  - mistakes: the most recent change wins (a finished mistake does not come back);
+  - the streak comes from the set of days you practiced, so a day counts once on any number of devices;
+  - settings: the most recent change wins;
+  - **Reset all progress** resets every device at its next sync.
+- Syncs on app start, after each lesson, when the device comes back online, and when you leave the app with unsynced changes.
+- `sync.js` and the Firebase SDK (pinned to 13.2.0, from gstatic) load only when you're signed in or tap Sign in. The service worker caches them, so a signed-in user can still open the app offline.
+- The Firebase web config in `firebase-config.js` is public by design.
 
 ## Run it
 
@@ -52,3 +70,11 @@ npm run generate          # PER_MODE=320 by default: questions per topic per exe
 - After regenerating or changing any app file, **bump `VERSION` in `sw.js`**, otherwise installed apps keep the old cached version.
 
 Add `?test` to the URL to expose `window.__redpen` (lesson and progress state) for automated tests.
+
+## Tests
+
+```bash
+cd tests && npm install
+npm run unit   # merge rules
+npm run e2e    # offline app, three-device sync on the Firebase emulators, security rules (needs Java)
+```
