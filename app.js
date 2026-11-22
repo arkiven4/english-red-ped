@@ -54,18 +54,27 @@ const SRS_DAYS = [1, 3, 7, 14];
 const DAY = 864e5;
 
 /* ================= storage ================= */
+// Schema, migration and the cloud-sync merge live in merge.js (window.RedPenState). The key name stays "redpen.v1"
+// for compatibility; the saved object carries its own schema version in `v`.
 const KEY = "redpen.v1";
-const fresh = () => ({ v: 1, topics: {}, unlocked: ["be_verb"], srs: {}, recent: [], xp: 0, day: today(), dayCorrect: 0, goal: 10,
-  streak: 0, lastLesson: "", lessons: 0, answered: 0, right: 0, theme: "light", themeChosen: true });
+const RS = window.RedPenState;
 function today(d = new Date()) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 const yesterday = () => today(new Date(Date.now() - DAY));
+const fresh = () => RS.fresh(today());
+// A random id per browser, so counters from different devices can be added up after a sync. Not part of S.
+const DEV = (() => { try { let d = localStorage.getItem("redpen.dev"); if (!d) { d = "d" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem("redpen.dev", d); } return d; } catch (e) { return "d-nostorage"; } })();
+function loadState(raw) {
+  if (raw && raw.v === 1 && !raw.themeChosen) { raw.theme = "light"; raw.themeChosen = true; } // light is the default; older saves had "system"
+  return RS.migrate(raw, today());
+}
 let S = fresh();
-try { const raw = JSON.parse(localStorage.getItem(KEY)); if (raw && raw.v === 1) S = Object.assign(fresh(), raw); } catch (e) {}
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast("Could not save progress on this device."); } };
-function rollDay() { if (S.day !== today()) { S.day = today(); S.dayCorrect = 0; save(); } }
+try { S = loadState(JSON.parse(localStorage.getItem(KEY))) || S; } catch (e) {}
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast("Could not save progress on this device."); } };
+const save = () => { persist(); sync.dirty = true; };
+function rollDay() { if (S.day !== today()) { RS.derive(S, today()); save(); } }
 const T = id => S.topics[id] || (S.topics[id] = { m: 0, n: 0, c: 0 });
 const streakNow = () => (S.lastLesson === today() || S.lastLesson === yesterday()) ? S.streak : 0;
-if (!S.themeChosen) { S.theme = "light"; S.themeChosen = true; } // light is the default; older saves had "system"
+const setSetting = (k, v) => RS.setSetting(S, k, v, Date.now());
 let themeSet = false;
 function applyTheme() { // "system" leaves the attribute alone so the phone (or host page) decides
   const root = document.documentElement;
@@ -75,6 +84,81 @@ function applyTheme() { // "system" leaves the attribute alone so the phone (or 
   requestAnimationFrame(() => { meta.content = getComputedStyle(document.body).backgroundColor; });
 }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+/* ================= cloud sync (optional) ================= */
+// Without sign-in nothing here runs and sync.js / Firebase are never downloaded.
+// `?emu` on localhost talks to the Firebase emulators instead (for tests).
+const EMU = /[?&]emu\b/.test(location.search) && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+const FB_CONFIG = EMU ? { apiKey: "demo-key", authDomain: "localhost", projectId: "demo-redpen", appId: "demo" } : window.REDPEN_FIREBASE;
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
+const sync = { on: !!FB_CONFIG, user: null, status: "off", msg: "", last: +(lsGet("redpen.synced") || 0), dirty: false, mod: null, loading: null, busy: false, timer: 0 };
+const syncOpts = () => ({ today: today(), now: Date.now() });
+function syncChanged() { if (view === "progress") render(); }
+function loadSync() {
+  if (sync.loading) return sync.loading;
+  sync.loading = import("./sync.js").then(m => (sync.mod = m.start({
+    config: FB_CONFIG, emulator: EMU, schema: RS.SCHEMA,
+    getState: () => S,
+    merge: (local, cloud) => RS.merge(local, cloud, syncOpts()),
+    forCloud: RS.forCloud,
+    // merge again with the live state: answers given while the sync was on the network are kept
+    applyMerged: m => { S = RS.merge(S, m, syncOpts()); persist(); applyTheme(); if (view !== "lesson") render(); },
+    status: (kind, info) => {
+      if (kind === "syncing") sync.dirty = false;
+      if (kind === "synced") { sync.last = info; lsSet("redpen.synced", String(info)); }
+      if (kind === "error") { sync.msg = info; sync.dirty = true; }
+      if (kind === "offline") sync.dirty = true;
+      sync.status = kind; syncChanged();
+    },
+    user: u => { sync.user = u; lsSet("redpen.signedIn", u ? "1" : null); if (!u) sync.status = "off"; syncChanged(); },
+  }))).catch(e => {
+    sync.loading = null;
+    sync.status = navigator.onLine ? "error" : "offline";
+    sync.msg = "Could not load the sign-in service. Try again later.";
+    syncChanged(); throw e;
+  });
+  return sync.loading;
+}
+function syncSoon(delay = 1500) {
+  if (!sync.on || !sync.mod || !sync.user) return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(() => sync.mod.syncNow(), delay);
+}
+async function signIn() {
+  if (!navigator.onLine) return toast("You're offline. Connect to the internet to sign in.");
+  sync.busy = true; syncChanged();
+  try { const m = await loadSync(); await m.signIn(); toast("Signed in. Your progress is backed up."); }
+  catch (e) {
+    const c = (e && e.code) || "";
+    if (c === "auth/popup-closed-by-user" || c === "auth/cancelled-popup-request") {}
+    else if (c === "auth/popup-blocked") toast("The sign-in window was blocked. Allow pop-ups for this site and try again.");
+    else if (c === "auth/network-request-failed") toast("No connection. Try again when you're online.");
+    else if (c === "auth/unauthorized-domain") toast("This site is not authorized for sign-in yet (see the Firebase setup guide).");
+    else toast("Sign-in failed. Try again.");
+    console.warn("Red Pen sign-in:", c, e && e.message);
+  }
+  sync.busy = false; syncChanged();
+}
+async function signOut() {
+  try { await sync.mod.signOut(); toast("Signed out. Your progress stays on this device."); } catch (e) { toast("Could not sign out. Try again."); }
+}
+function ago(t) {
+  if (!t) return "never";
+  const m = Math.round((Date.now() - t) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 24 * 60 ? `${Math.round(m / 60)} h ago` : "on " + today(new Date(t));
+}
+if (sync.on) {
+  if (lsGet("redpen.signedIn") === "1") loadSync().catch(() => {}); // auth restores the user (also offline) and then syncs
+  window.addEventListener("online", () => syncSoon(0));
+  window.addEventListener("offline", () => { if (sync.user) { sync.status = "offline"; syncChanged(); } });
+  document.addEventListener("visibilitychange", () => {
+    if (!sync.mod || !sync.user) return;
+    const since = Date.now() - sync.last;
+    if (document.visibilityState === "hidden" && sync.dirty && since > 6e4) sync.mod.syncNow(); // leaving the app: push changes
+    if (document.visibilityState === "visible" && since > 5 * 6e4) syncSoon(0);              // back after a while: pull changes
+  });
+}
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -223,7 +307,7 @@ function startLesson(focusId, kind) {
   if (!dataReady) return;
   let focus = null, items;
   if (kind) { items = buildMix(kind); if (!items.length) return toast("Nothing to practice yet."); }
-  else { focus = focusId || frontier().id; S.current = focus; save(); items = buildLesson(focus); }
+  else { focus = focusId || frontier().id; if (S.current !== focus) setSetting("current", focus); save(); items = buildLesson(focus); }
   L = { focus, kind, from: view === "practice" ? "practice" : "home", items, i: 0, firstTry: 0, firstTotal: 0, xp: 0, combo: 0, retry: [], inRetry: false,
     startM: Object.fromEntries(TOPICS.map(t => [t.id, T(t.id).m])), startUnlocked: [...S.unlocked], earnedPass: false };
   newQuestion(); view = "lesson"; render();
@@ -277,18 +361,19 @@ function grade(ok) {
   if (!c.retry) {
     const t = T(q.topic); t.n++; if (ok) t.c++;
     t.m = Math.round((t.m + ALPHA * ((ok ? 100 : 0) - t.m)) * 10) / 10;
-    S.answered++; if (ok) S.right++;
-    const ms = (S.modeStats = S.modeStats || {})[q.type] || (S.modeStats[q.type] = { n: 0, c: 0 }); ms.n++; if (ok) ms.c++;
+    RS.bump(S, DEV, "answered"); if (ok) RS.bump(S, DEV, "right");
+    RS.bumpMode(S, DEV, q.type, ok);
     L.firstTotal++; if (ok) L.firstTry++;
     if (!ok) L.retry.push({ q, tag: c.tag, retry: true });
   }
   // spaced repetition
   const s = S.srs[q.id];
-  if (!ok) S.srs[q.id] = { box: 0, due: Date.now() + DAY / 2 };
-  else if (s) { if (s.box + 1 >= SRS_DAYS.length) delete S.srs[q.id]; else S.srs[q.id] = { box: s.box + 1, due: Date.now() + SRS_DAYS[s.box + 1] * DAY }; }
+  const now = Date.now();
+  if (!ok) RS.srsPut(S, q.id, 0, now + DAY / 2, now);
+  else if (s) { if (s.box + 1 >= SRS_DAYS.length) RS.srsFinish(S, q.id, now); else RS.srsPut(S, q.id, s.box + 1, now + SRS_DAYS[s.box + 1] * DAY, now); }
   // rewards
   if (ok) {
-    L.combo++; const gain = c.retry ? 5 : 10; L.xp += gain; S.xp += gain; S.dayCorrect++;
+    L.combo++; const gain = c.retry ? 5 : 10; L.xp += gain; RS.bump(S, DEV, "xp", gain); RS.addCorrectToday(S, DEV, today());
     if (S.dayCorrect === S.goal) L.earnedPass = true;
   } else { L.combo = 0; if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {} }
   S.recent = [...S.recent.filter(id => id !== q.id), q.id].slice(-600);
@@ -311,10 +396,10 @@ function next() {
 }
 function finishLesson() {
   const perfect = L.firstTry === L.firstTotal;
-  const bonus = 5 + (perfect ? 10 : 0); L.xp += bonus; S.xp += bonus;
-  S.lessons++;
-  if (S.lastLesson !== today()) { S.streak = (S.lastLesson === yesterday() ? S.streak : 0) + 1; S.lastLesson = today(); }
-  L.perfect = perfect; save(); view = "result"; render(); window.scrollTo(0, 0);
+  const bonus = 5 + (perfect ? 10 : 0); L.xp += bonus; RS.bump(S, DEV, "xp", bonus);
+  RS.bump(S, DEV, "lessons");
+  RS.markDay(S, today()); // the streak is derived from the set of practice days
+  L.perfect = perfect; save(); syncSoon(0); view = "result"; render(); window.scrollTo(0, 0);
 }
 
 /* ================= sheets ================= */
@@ -335,7 +420,7 @@ function topicSheet(t) {
   ] : [
     h("h2", {}, t.name + " is locked"),
     h("p", {}, `It unlocks when the topic before it reaches ${UNLOCK_AT}% mastery. If your class is already at ${UNITS[t.unit].lesson ? "Lesson " + UNITS[t.unit].lesson : "this point"}, jump here. Earlier topics unlock too, but they only appear in lessons after you practice them.`),
-    h("div", { class: "row" }, h("button", { class: "btn", onclick: () => { const idx = TOPICS.indexOf(t); for (const x of TOPICS.slice(0, idx + 1)) if (!S.unlocked.includes(x.id)) S.unlocked.push(x.id); S.current = t.id; save(); close(); render(); toast(`${t.name} unlocked. Lessons now focus on it.`); } }, "Jump here"),
+    h("div", { class: "row" }, h("button", { class: "btn", onclick: () => { const idx = TOPICS.indexOf(t); for (const x of TOPICS.slice(0, idx + 1)) if (!S.unlocked.includes(x.id)) S.unlocked.push(x.id); setSetting("current", t.id); save(); close(); render(); toast(`${t.name} unlocked. Lessons now focus on it.`); } }, "Jump here"),
       h("button", { class: "btn ghost", onclick: close }, "Cancel")),
   ]);
 }
@@ -527,16 +612,34 @@ function progressView() {
           h("strong", {}, t.name), h("span", { class: "pct" }, un ? (st.n ? Math.round(st.m) + "%" : "new") : "locked"),
           h("div", { class: "bar" }, h("i", { style: `width:${un ? st.m : 0}%` }))); })),
     h("div", { class: "card" }, h("h2", {}, "Daily goal for the scroll pass"), h("p", {}, "Correct answers needed each day."),
-      h("div", { class: "seg" }, [5, 10, 20, 30].map(g => h("button", { "aria-pressed": String(S.goal === g), onclick: () => { S.goal = g; save(); render(); } }, g)))),
+      h("div", { class: "seg" }, [5, 10, 20, 30].map(g => h("button", { "aria-pressed": String(S.goal === g), onclick: () => { setSetting("goal", g); save(); render(); } }, g)))),
     h("div", { class: "card" }, h("h2", {}, "Appearance"), h("p", {}, "Light is the default. System follows your phone's dark mode setting."),
       h("div", { class: "seg three" }, [["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) =>
-        h("button", { "aria-pressed": String((S.theme || "system") === v), onclick: () => { S.theme = v; S.themeChosen = true; save(); applyTheme(); render(); } }, l)))),
-    h("div", { class: "card" }, h("h2", {}, "Backup"),
-      h("p", {}, "Progress is stored in this browser. Clearing Chrome's site data deletes it, so export a backup now and then."),
+        h("button", { "aria-pressed": String((S.theme || "system") === v), onclick: () => { setSetting("theme", v); setSetting("themeChosen", true); save(); applyTheme(); render(); } }, l)))),
+    cloudCard(),
+    h("div", { class: "card" }, h("h2", {}, "Backup file"),
+      h("p", {}, sync.user ? "Your progress is also in the cloud. A backup file is an extra copy you keep yourself."
+        : "Progress is stored in this browser. Clearing Chrome's site data deletes it, so export a backup now and then."),
       h("div", { class: "btnrow" }, h("button", { class: "btn ghost small", onclick: exportBackup }, "Export"), h("button", { class: "btn ghost small", onclick: () => fileIn.click() }, "Import")), fileIn,
       installEvt ? h("button", { class: "btn small", onclick: async () => { installEvt.prompt(); try { await installEvt.userChoice; } catch (e) {} installEvt = null; render(); } }, "Install app") : null,
       h("button", { class: "link", style: "color:var(--bad);justify-self:start", onclick: resetSheet }, "Reset all progress")),
     h("div", { class: "spacer" }), nav()];
+}
+function cloudCard() {
+  if (!sync.on) return null;
+  if (!sync.user) return h("div", { class: "card cloud" }, h("h2", {}, "Cloud backup"),
+    h("p", {}, "Sign in to back up your progress and keep your phone, laptop and PC in sync. Without signing in, everything stays on this device."),
+    h("button", { class: "btn small", onclick: signIn, disabled: sync.busy }, sync.busy ? "Signing in…" : "Sign in with Google to back up and sync"),
+    sync.status === "error" ? h("p", { class: "sync-note" }, sync.msg) : null);
+  const st = sync.status, when = ago(sync.last);
+  const label = st === "syncing" ? "Syncing…" : st === "synced" ? `Synced ${when}` : st === "offline" ? `Offline. Last synced ${when}. It will sync when you're back online.`
+    : st === "error" ? sync.msg : `Last synced ${when}`;
+  return h("div", { class: "card cloud" }, h("h2", {}, "Cloud backup"),
+    h("p", {}, "Signed in as ", h("b", {}, sync.user.email || sync.user.name || "Google user"), ". Progress syncs after each lesson and when you open the app."),
+    h("div", { class: "sync-status " + st, role: "status" }, h("i", { class: "dot" }), h("span", {}, label)),
+    h("div", { class: "btnrow" },
+      h("button", { class: "btn ghost small", onclick: () => sync.mod.syncNow(), disabled: st === "syncing" || !navigator.onLine }, "Sync now"),
+      h("button", { class: "btn ghost small", onclick: signOut }, "Sign out")));
 }
 function exportBackup() {
   const blob = new Blob([JSON.stringify(S, null, 1)], { type: "application/json" });
@@ -547,14 +650,16 @@ function exportBackup() {
 function importBackup(file) {
   if (!file) return;
   file.text().then(txt => {
-    const d = JSON.parse(txt);
-    if (!d || d.v !== 1 || typeof d.topics !== "object") throw new Error("bad");
-    S = Object.assign(fresh(), d); save(); applyTheme(); render(); toast("Backup restored.");
+    const d = loadState(JSON.parse(txt));
+    if (!d) throw new Error("bad");
+    d.epoch = Math.max(d.epoch, S.epoch); // an old backup must not lose to a later reset when it syncs
+    S = d; save(); syncSoon(0); applyTheme(); render(); toast("Backup restored.");
   }).catch(() => toast("That file is not a Red Pen backup."));
 }
 function resetSheet() {
-  sheet(close => [h("h2", {}, "Delete all progress?"), h("p", {}, "This removes your XP, streak, mastery and mistakes on this device. Export a backup first if you might want it back."),
-    h("div", { class: "row" }, h("button", { class: "btn bad", onclick: () => { S = fresh(); save(); applyTheme(); close(); render(); toast("Progress deleted."); } }, "Delete everything"),
+  sheet(close => [h("h2", {}, "Delete all progress?"), h("p", {}, sync.user ? "This removes your XP, streak, mastery and mistakes on this device, in your cloud backup and on your other devices when they next sync. Export a backup first if you might want it back."
+      : "This removes your XP, streak, mastery and mistakes on this device. Export a backup first if you might want it back."),
+    h("div", { class: "row" }, h("button", { class: "btn bad", onclick: () => { const epoch = S.epoch + 1; S = fresh(); S.epoch = epoch; save(); syncSoon(0); applyTheme(); close(); render(); toast("Progress deleted."); } }, "Delete everything"),
       h("button", { class: "btn ghost", onclick: close }, "Cancel"))]);
 }
 
