@@ -1,6 +1,6 @@
 // Red Pen service worker: works offline after the first visit.
 // Bump VERSION whenever app files or data/questions.json change, so phones download the new version.
-const VERSION = "redpen-2026-11-22a";
+const VERSION = "redpen-2026-11-24a";
 const SHELL = ["./", "index.html", "style.css", "app.js", "merge.js", "firebase-config.js", "sync.js", "manifest.webmanifest", "data/questions.json", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png"];
 const FONTS = "redpen-fonts";
 // Firebase SDK (pinned version in the URL, so it never changes): cache-first, kept across app updates.
