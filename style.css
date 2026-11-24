@@ -248,3 +248,30 @@ textarea:focus { border-color: var(--primary); outline: none; }
 .card.cloud .btn.small { width: 100%; }
 @keyframes sync-pulse { from { opacity: 1; } to { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .sync-status.syncing .dot { animation: none; } }
+
+/* ---------- Say it (pronunciation) ---------- */
+.btn svg { width: 20px; height: 20px; flex: none; }
+.say-prompt { background: var(--surface); border: 2px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.say-controls { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
+.say-words { display: flex; flex-wrap: wrap; gap: 10px 8px; background: var(--surface); border: 2px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.say-word { display: inline-flex; flex-direction: column; align-items: center; padding: 6px 10px; border-radius: 10px; font-size: 20px; font-weight: 800; border: 2px solid transparent; }
+.say-word.good { background: var(--good-soft); color: var(--good-dark); border-color: var(--good); }
+.say-word.unclear { background: var(--warn-soft); color: var(--warn-dark); border-color: var(--warn); }
+.say-word.wrong { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); text-decoration: underline; text-decoration-color: var(--bad); text-decoration-thickness: 2.5px; }
+:root[data-theme="dark"] .say-word.good { color: var(--good); }
+:root[data-theme="dark"] .say-word.unclear { color: var(--warn); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .say-word.good { color: var(--good); }
+  :root:not([data-theme="light"]) .say-word.unclear { color: var(--warn); }
+}
+.say-ipa { font-size: 12px; font-weight: 700; opacity: .82; margin-top: 2px; }
+.say-status { margin: 0; font-size: 15px; font-weight: 700; color: var(--primary); }
+.say-status.offline { color: var(--warn-dark); }
+.say-feedback.good { border-color: var(--good); }
+.say-feedback.bad { border-color: var(--bad); }
+.say-meta { display: block; color: var(--muted); font-size: 13px; font-weight: 700; margin-top: 2px; }
+.say-issues { display: grid; gap: 10px; }
+.say-issue { border-left: 4px solid var(--bad); background: var(--bad-soft); padding: 10px 12px; border-radius: 0 10px 10px 0; }
+.say-issue.unclear { border-left-color: var(--warn); background: var(--warn-soft); }
+.say-issue strong { display: block; font-size: 16px; color: var(--ink); }
+.say-issue p { margin: 4px 0 0; font-size: 14px; color: var(--ink); opacity: .9; }

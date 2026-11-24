@@ -223,13 +223,46 @@ const ICON = {
   path: `<svg viewBox="0 0 24 24"><circle cx="7" cy="6" r="3" fill="currentColor"/><circle cx="17" cy="12" r="3" fill="currentColor"/><circle cx="8" cy="19" r="3" fill="currentColor"/><path d="M9 8l6 3M15 14l-5 3" stroke="currentColor" stroke-width="2" fill="none"/></svg>`,
   target: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2.4"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></svg>`,
   chart: `<svg viewBox="0 0 24 24"><rect x="4" y="12" width="4" height="8" rx="1.5" fill="currentColor"/><rect x="10" y="7" width="4" height="13" rx="1.5" fill="currentColor"/><rect x="16" y="3" width="4" height="17" rx="1.5" fill="currentColor"/></svg>`,
+  mic: `<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>`,
+  speaker: `<svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 9a4 4 0 0 1 0 6m2.5-8.5a8 8 0 0 1 0 11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>`,
 };
 const icon = n => h("span", { html: ICON[n], style: "display:contents" });
 
 /* ================= data ================= */
-let POOL = {}, BY_ID = {}, dataReady = false;
+const PRON_CATS = [
+  ["final_s", "Final -s / -es", "books, works, watches"],
+  ["final_ed", "Past -ed endings", "walked, cooked, helped"],
+  ["th", "“th” sounds (/θ/, /ð/)", "three, think, they"],
+  ["v_f", "“v” vs “f”", "very, five, live"],
+  ["z_s", "Voiced final /z/", "reads, apples, plays"],
+];
+let POOL = {}, BY_ID = {}, SAY_POOL = [], dataReady = false;
+function tagSaySentence(text) {
+  const words = (String(text || "").match(/[A-Za-z']+/g) || []).map(w => w.toLowerCase());
+  if (words.length < 4 || words.length > 11) return null;
+  const cats = new Set();
+  for (const w of words) {
+    if (w.endsWith("s") && w.length >= 3 && !/^(is|his|was|this|yes|as|us|bus|class|glass|grass|dress|less|pass|boss)$/.test(w)) {
+      cats.add("final_s");
+      if (/[aeioubdglmnrvwy]s$/.test(w) || /(ches|shes|xes|zes|ses|ges)$/.test(w)) cats.add("z_s");
+    }
+    if (w.endsWith("ed") && w.length >= 4 && !/^(bed|red|fed|led|shed|sled)$/.test(w)) cats.add("final_ed");
+    if (w.includes("th")) cats.add("th");
+    if (w.includes("v")) cats.add("v_f");
+  }
+  return cats.size ? [...cats] : null;
+}
 fetch("data/questions.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
-  for (const q of d.items) { BY_ID[q.id] = q; ((POOL[q.topic] = POOL[q.topic] || {})[q.type] = POOL[q.topic][q.type] || []).push(q); }
+  const seenSay = new Set();
+  for (const q of d.items) {
+    BY_ID[q.id] = q;
+    ((POOL[q.topic] = POOL[q.topic] || {})[q.type] = POOL[q.topic][q.type] || []).push(q);
+    const sent = (q.type === "order" || q.type === "rewrite") ? q.answer : (q.type === "spot" ? (q.correct ? q.sentence : q.corrected) : null);
+    if (sent && !sent.includes("___") && !seenSay.has(sent)) {
+      const cats = tagSaySentence(sent);
+      if (cats) { seenSay.add(sent); SAY_POOL.push({ id: q.id, text: sent, topic: q.topic, cats }); }
+    }
+  }
   dataReady = true; render();
 }).catch(() => { $("#app").replaceChildren(h("div", { class: "boot" }, "Could not load the questions. Check your connection and reopen the app.")); });
 
@@ -568,15 +601,187 @@ function resultView() {
     h("div", { class: "spacer" }),
     h("button", { class: "btn", onclick: () => { view = L.from || "home"; L = null; render(); window.scrollTo(0, 0); } }, "Continue"));
 }
+/* ================= pronunciation ("Say it") ================= */
+const SAY_SIZE = 6;
+let SAY = null, asrMod = null, asrLoading = null, activeRecorder = null, activeStream = null;
+const pronMiss = cat => { const s = (S.pronStats || {})[cat] || { n: 0, c: 0 }; return 1 - (s.c + 1) / (s.n + 2); };
+
+function pickSayItems() {
+  const used = new Set(), out = [];
+  const pool = SAY_POOL.length ? SAY_POOL : [{ id: "fb1", text: "She reads three books every week.", topic: "pres_simple", cats: ["final_s", "z_s", "th", "v_f"] }];
+  let guard = 0;
+  while (out.length < SAY_SIZE && guard++ < 80) {
+    const it = weighted(pool, x => Math.max(...x.cats.map(c => 0.4 + 3 * pronMiss(c))));
+    if (!used.has(it.text) || guard > 60) { used.add(it.text); out.push(it); }
+  }
+  return out;
+}
+
+function loadAsr(onStatus) {
+  if (asrMod) return Promise.resolve(asrMod);
+  if (!asrLoading) asrLoading = import("./asr.js").then(m => (asrMod = m)).catch(e => { asrLoading = null; throw e; });
+  return asrLoading.then(async m => { await m.ensureReady(onStatus); return m; });
+}
+
+function stopRecStream() {
+  if (activeRecorder && activeRecorder.state !== "inactive") { try { activeRecorder.stop(); } catch (e) {} }
+  if (activeStream) { try { activeStream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+  activeRecorder = null; activeStream = null;
+}
+
+function speakSentence(text) {
+  if (typeof speechSynthesis === "undefined") return toast("Speech playback is not available in this browser.");
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
+    const gb = voices.find(v => /^en[-_]GB/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang));
+    if (gb) { try { u.voice = gb; } catch (e) {} }
+    u.lang = (gb && gb.lang) || "en-GB";
+    u.rate = 0.92;
+    speechSynthesis.speak(u);
+  } catch (e) { toast("Could not play audio."); }
+}
+
+function startSayIt() {
+  if (!dataReady) return;
+  stopRecStream();
+  SAY = { items: pickSayItems(), i: 0, xp: 0, passed: 0, status: "", recording: false, scoring: false, res: null, counted: false };
+  view = "say"; render(); window.scrollTo(0, 0);
+}
+
+async function toggleSayRecord() {
+  if (!SAY || SAY.scoring) return;
+  if (SAY.recording && activeRecorder) {
+    SAY.recording = false; SAY.scoring = true; SAY.status = "Waking up the scorer…"; render();
+    stopRecStream();
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+    return toast("Microphone recording is not supported in this browser.");
+  }
+  try {
+    activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    return toast("Microphone permission was denied. Allow microphone access to use Say it.");
+  }
+  const chunks = [];
+  let rec;
+  try { rec = new MediaRecorder(activeStream); } catch (e) { stopRecStream(); return toast("Could not start audio recorder."); }
+  activeRecorder = rec;
+  rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+  rec.onstop = async () => {
+    if (activeStream) { try { activeStream.getTracks().forEach(t => t.stop()); } catch (e) {} activeStream = null; }
+    activeRecorder = null;
+    if (!SAY || view !== "say") return;
+    const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+    try {
+      const m = await loadAsr(msg => { if (SAY) { SAY.status = msg; render(); } });
+      SAY.status = "Scoring your pronunciation…"; render();
+      const res = await m.scoreAudio(SAY.items[SAY.i].text, blob, msg => { if (SAY) { SAY.status = msg; render(); } });
+      if (!SAY) return;
+      SAY.scoring = false; SAY.status = ""; SAY.res = res;
+      const ok = res.score >= 75 && !(res.errors || []).some(e => e.severity === "wrong" && e.category !== "general");
+      SAY.ok = ok;
+      if (!SAY.counted) {
+        SAY.counted = true;
+        rollDay();
+        for (const [cat, st] of Object.entries(res.categories || {})) {
+          for (let k = 0; k < (st.n || 0); k++) RS.bumpPron(S, DEV, cat, k < (st.c || 0));
+        }
+        if (ok) { SAY.passed++; SAY.xp += 10; RS.bump(S, DEV, "xp", 10); RS.addCorrectToday(S, DEV, today()); }
+        save(); syncSoon();
+      } else if (ok) {
+        SAY.xp += 5; RS.bump(S, DEV, "xp", 5); save(); syncSoon();
+      }
+      render();
+    } catch (e) {
+      if (!SAY) return;
+      SAY.scoring = false;
+      SAY.status = !navigator.onLine ? "You're offline. Connect to the internet to load the pronunciation scorer." : (e && e.message) || "Could not score recording. Try again.";
+      render();
+    }
+  };
+  SAY.res = null; SAY.recording = true; SAY.status = "Listening… Read the sentence aloud, then tap Stop.";
+  rec.start();
+  render();
+}
+
+function nextSay() {
+  if (!SAY) return;
+  stopRecStream();
+  SAY.i++;
+  if (SAY.i >= SAY.items.length) {
+    RS.markDay(S, today()); save(); syncSoon(0);
+    toast(`Pronunciation practice complete! +${SAY.xp} XP`);
+    SAY = null; view = "practice"; render(); window.scrollTo(0, 0);
+    return;
+  }
+  SAY.res = null; SAY.status = ""; SAY.recording = false; SAY.scoring = false; SAY.counted = false;
+  render(); window.scrollTo(0, 0);
+}
+
+function sayView() {
+  const it = SAY.items[SAY.i];
+  const progress = (SAY.i / SAY.items.length) * 100;
+  const offlineBlocked = !navigator.onLine && !asrMod;
+  const res = SAY.res;
+  const catNames = it.cats.map(c => (PRON_CATS.find(x => x[0] === c) || [c, c])[1]);
+
+  return h("div", { class: "lesson say-lesson" },
+    h("div", { class: "lesson-top" },
+      h("button", { class: "close", "aria-label": "Leave pronunciation practice", onclick: () => { stopRecStream(); SAY = null; view = "practice"; render(); } }, icon("x")),
+      h("div", { class: "bar", role: "progressbar", "aria-valuenow": String(Math.round(progress)), "aria-valuemin": "0", "aria-valuemax": "100" }, h("i", { style: `width:${progress}%` })),
+      h("span", { class: "combo" }, `${SAY.i + 1}/${SAY.items.length}`)),
+    h("div", { class: "q" },
+      h("div", { class: "q-kicker" },
+        h("span", { class: "chip new" }, "Say it"),
+        catNames.slice(0, 2).map(n => h("span", { class: "chip" }, n))),
+      h("h1", {}, "Read this sentence aloud"),
+      res ? h("div", { class: "say-words", "aria-label": "Scored words" }, res.words.map(w =>
+        h("span", { class: `say-word ${w.status}`, title: `Expected /${w.expected_ipa}/ · Heard /${w.heard_ipa || "—"}/` },
+          w.word, h("small", { class: "say-ipa" }, `/${w.expected_ipa}/`))))
+        : h("p", { class: "sentence say-prompt" }, it.text),
+      h("div", { class: "say-controls" },
+        h("button", { class: "btn ghost small", id: "say-listen", onclick: () => speakSentence(it.text) }, icon("speaker"), "Listen"),
+        h("button", {
+          class: "btn " + (SAY.recording ? "bad" : ""),
+          id: "say-record",
+          disabled: SAY.scoring || offlineBlocked,
+          onclick: toggleSayRecord
+        }, icon("mic"), SAY.recording ? "Stop" : SAY.scoring ? "Scoring…" : res ? "Try again" : "Record")),
+      offlineBlocked ? h("p", { class: "say-status offline" }, "You're offline. Pronunciation scoring needs a connection the first time. Grammar lessons still work offline.") : null,
+      SAY.status ? h("p", { class: "say-status", role: "status" }, SAY.status) : null,
+      res ? h("div", { class: "card say-feedback " + (SAY.ok ? "good" : "bad"), role: "status" },
+        h("div", { class: "fb-head" },
+          nibEl(SAY.ok ? "happy" : "sad"),
+          h("div", {},
+            h("div", { class: "fb-title" }, SAY.ok ? `Clear! (${res.score}%)` : `Keep practicing (${res.score}%)`),
+            h("small", { class: "say-meta" }, `Matched ${res.accent === "en-us" ? "American" : "British"} English · Green = good, Amber = unclear, Red = check sound`))),
+        res.errors && res.errors.length ? h("div", { class: "say-issues" },
+          res.errors.slice(0, 3).map(e => h("div", { class: "say-issue " + e.severity },
+            h("strong", {}, e.message),
+            h("p", {}, e.tip))))
+          : h("p", { class: "why" }, "All target endings and consonants sounded clear!"),
+        h("div", { class: "btnrow" },
+          h("button", { class: "btn ghost", id: "say-retry", onclick: toggleSayRecord }, "Try again"),
+          h("button", { class: "btn " + (SAY.ok ? "good" : ""), id: "say-next", onclick: nextSay }, SAY.i + 1 >= SAY.items.length ? "Finish" : "Next sentence"))) : null));
+}
+
 function practiceView() {
   const practiced = TOPICS.filter(t => T(t.id).n > 0).sort((a, b) => T(a.id).m - T(b.id).m);
   const nMist = Object.keys(S.srs).filter(id => BY_ID[id]).length;
   const modes = Object.keys(MODES).map(m => ({ m, s: (S.modeStats || {})[m] || { n: 0, c: 0 } }));
   const known = modes.filter(x => x.s.n >= 5).sort((a, b) => a.s.c / a.s.n - b.s.c / b.s.n);
   const head = [topbar(), h("h1", { class: "page-title" }, "Practice")];
+  const sayCard = h("div", { class: "card say-card" },
+    h("h2", {}, "Say it — pronunciation"),
+    h("p", {}, "Read a sentence aloud and check the sounds Indonesian speakers often miss: final -s, past -ed, “th”, and “v”."),
+    h("button", { class: "btn", id: "start-say", onclick: startSayIt, disabled: !dataReady }, icon("mic"), "Say it"));
   if (!practiced.length) return [...head,
-    h("div", { class: "hero" }, nibEl("idle"), h("div", { class: "bubble" }, "Finish one lesson in Learn first. I need to see some answers before I can find your weak spots.")),
-    h("button", { class: "btn", onclick: () => { view = "home"; render(); } }, "Go to Learn"), h("div", { class: "spacer" }), nav()];
+    h("div", { class: "hero" }, nibEl("idle"), h("div", { class: "bubble" }, "Finish one lesson in Learn first for a grammar weak-spot mix, or try Say it below to practice pronunciation.")),
+    h("button", { class: "btn", onclick: () => { view = "home"; render(); } }, "Go to Learn"),
+    sayCard, h("div", { class: "spacer" }), nav()];
   const weakest = practiced[0];
   const say = [`This mix jumps between random topics, mostly the ones you get wrong. Weakest right now: `, h("b", {}, weakest.name), ` (${Math.round(T(weakest.id).m)}%)`,
     known.length && known[0].s.c / known[0].s.n < 0.85 ? [`. You miss `, h("b", {}, MODES[known[0].m].label), ` questions most, so you'll get more of those.`] : "."];
@@ -585,6 +790,7 @@ function practiceView() {
     h("div", { class: "row", style: "display:grid;gap:12px" },
       h("button", { class: "btn", onclick: () => startLesson(null, "weak"), disabled: !dataReady }, "Weak-spot mix"),
       h("button", { class: "btn ghost", onclick: () => startLesson(null, "mistakes"), disabled: !dataReady || !nMist }, nMist ? `Review my mistakes (${Math.min(nMist, LESSON_SIZE)})` : "No mistakes to review")),
+    sayCard,
     h("div", { class: "card" }, h("h2", {}, "Your weak spots"), h("p", {}, "Only topics you have practiced. The weaker a topic, the more often it appears in the mix."),
       practiced.slice(0, 6).map(t => { const st = T(t.id); return h("div", { class: "trow " + level(st.m) },
         h("strong", {}, t.name), h("span", { class: "pct" }, Math.round(st.m) + "%"), h("div", { class: "bar" }, h("i", { style: `width:${st.m}%` }))); })),
@@ -611,6 +817,16 @@ function progressView() {
         return h("div", { class: "trow " + (un ? level(st.m) : "locked") },
           h("strong", {}, t.name), h("span", { class: "pct" }, un ? (st.n ? Math.round(st.m) + "%" : "new") : "locked"),
           h("div", { class: "bar" }, h("i", { style: `width:${un ? st.m : 0}%` }))); })),
+    h("div", { class: "card", id: "pron-card" }, h("h2", {}, "Pronunciation (Say it)"),
+      h("p", {}, "Sound accuracy from Say it practice, tracked separately from grammar mastery."),
+      PRON_CATS.map(([id, label]) => {
+        const s = (S.pronStats || {})[id] || { n: 0, c: 0 };
+        const pct = s.n ? Math.round(s.c / s.n * 100) : 0;
+        return h("div", { class: "trow " + (s.n ? level(pct) : "locked"), "data-pron-cat": id },
+          h("strong", {}, label),
+          h("span", { class: "pct" }, s.n ? `${pct}% · ${s.c}/${s.n}` : "no recordings yet"),
+          h("div", { class: "bar" }, h("i", { style: `width:${pct}%` })));
+      })),
     h("div", { class: "card" }, h("h2", {}, "Daily goal for the scroll pass"), h("p", {}, "Correct answers needed each day."),
       h("div", { class: "seg" }, [5, 10, 20, 30].map(g => h("button", { "aria-pressed": String(S.goal === g), onclick: () => { setSetting("goal", g); save(); render(); } }, g)))),
     h("div", { class: "card" }, h("h2", {}, "Appearance"), h("p", {}, "Light is the default. System follows your phone's dark mode setting."),
@@ -669,6 +885,7 @@ function render() {
   if (!dataReady && view !== "home") view = "home";
   let content;
   if (view === "lesson" && L) content = lessonView();
+  else if (view === "say" && SAY) content = sayView();
   else if (view === "result" && L) content = resultView();
   else if (view === "progress") content = progressView();
   else if (view === "practice") content = practiceView();
@@ -681,7 +898,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "Enter") { e.preventDefault(); if (L.cur.done) next(); else check(); }
 });
 
-if (/[?&]test\b/.test(location.search)) window.__redpen = { get L() { return L; }, get S() { return S; }, buildMix };
+if (/[?&]test\b/.test(location.search)) window.__redpen = { get L() { return L; }, get S() { return S; }, get SAY() { return SAY; }, buildMix, startSayIt };
 applyTheme(); rollDay(); render();
 if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();

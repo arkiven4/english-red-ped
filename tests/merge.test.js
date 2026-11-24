@@ -159,3 +159,20 @@ test("new device signing in adopts the cloud's settings, not its own defaults", 
   const m = R.merge(R.fresh(TODAY), R.forCloud(cloud), opts);
   assert.equal(m.theme, "dark"); assert.deepEqual(m.unlocked, ["articles", "be_verb"]); assert.equal(m.xp, 500);
 });
+
+test("pronunciation stats merge across devices per sound category", () => {
+  const a = R.fresh(TODAY), b = R.fresh(TODAY);
+  R.bumpPron(a, "phone", "final_s", true);
+  R.bumpPron(a, "phone", "final_s", false);
+  R.bumpPron(a, "phone", "th", false);
+  R.bumpPron(b, "laptop", "final_s", true);
+  R.bumpPron(b, "laptop", "v_f", true);
+  const m = R.merge(a, b, opts);
+  assert.deepEqual(m.pronStats, {
+    final_s: { n: 3, c: 2 },
+    th: { n: 1, c: 0 },
+    v_f: { n: 1, c: 1 },
+  });
+  assert.equal(R.forCloud(m).pronStats, undefined, "derived pronStats is omitted from cloud payload");
+  assert.deepEqual(stripRecent(R.merge(m, a, opts)), stripRecent(m), "idempotent after merge");
+});

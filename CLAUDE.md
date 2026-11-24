@@ -15,6 +15,7 @@ Offline-capable PWA (plain HTML/CSS/JS, no build step) hosted on GitHub Pages (h
 - `index.html`, `style.css`, `app.js`: the whole app. `app.js` is one IIFE: curriculum (`UNITS`), storage (`S`, localStorage key `redpen.v1`), lesson building, views (home/Learn, practice, lesson, result, progress), Nib mascot SVG.
 - `merge.js`: pure state migration + merge used by cloud sync (works in browser and Node). Tests: `node --test tests/*.test.js`.
 - `sync.js`: Firebase glue, loaded lazily with `import()` only when signed in or when the user taps Sign in. Firebase SDK is pinned (gstatic CDN) and cached by `sw.js`.
+- `asr.js`, `data/phonemes.json`, `asr/`: "Say it" phoneme pronunciation scorer (`onnx-community/wav2vec2-lv-60-espeak-cv-ft-ONNX` + `espeak-ng` `en-gb`/`en-us` dictionary). Loaded lazily with `import("./asr.js")` only when entering Say it. Standalone Hugging Face Space: https://huggingface.co/spaces/arkiven4/red-pen-asr. Benchmark: `PYTHONPATH=asr uv run --with onnxruntime --with numpy --with edge-tts python3 asr/eval.py`.
 - `firebase/`: Firestore security rules + emulator config. Setup steps: `docs/firebase-setup.md`. Tests: `cd tests && npm run unit && npm run e2e` (e2e uses Firebase emulators).
 - `sw.js`: service worker. **Bump `VERSION` whenever any app file or the data changes**, or installed apps keep the old cache.
 - `manifest.webmanifest`, `icons/`: PWA install.

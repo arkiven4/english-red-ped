@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Red Pen Pronunciation Scorer</title>
+  <style>
+    :root { --bg: #faf7f2; --card: #ffffff; --ink: #1d2647; --muted: #5e6478; --primary: #0f8b8d; --good: #1f8a4c; --warn: #c77d0a; --bad: #d63629; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); max-width: 620px; margin: 0 auto; padding: 24px 16px; line-height: 1.5; }
+    .card { background: var(--card); border-radius: 16px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); margin-bottom: 16px; }
+    h1 { font-size: 1.4rem; margin: 0 0 8px; }
+    input { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1.5px solid #d5d0c5; margin-bottom: 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button { font: inherit; font-weight: 700; padding: 10px 16px; border-radius: 12px; border: none; cursor: pointer; background: var(--primary); color: #fff; }
+    button.rec { background: var(--bad); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .words { display: flex; flex-wrap: wrap; gap: 8px; font-size: 1.25rem; font-weight: 700; margin: 12px 0; }
+    .w-good { color: var(--good); }
+    .w-unclear { color: var(--warn); text-decoration: underline wavy; }
+    .w-wrong { color: var(--bad); text-decoration: underline; }
+    .status { font-size: 0.9rem; color: var(--muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Red Pen — Phoneme Pronunciation Scorer</h1>
+    <p>Powered by <code>onnx-community/wav2vec2-lv-60-espeak-cv-ft-ONNX</code> + <code>espeak-ng</code> (en-GB &amp; en-US).</p>
+    <input id="sent" value="She reads three books every week.">
+    <div class="row">
+      <button id="listen">Listen</button>
+      <button id="rec">Record</button>
+    </div>
+    <div id="status" class="status">Tap Record to load the phoneme model and test your pronunciation.</div>
+  </div>
+  <div id="out" class="card" hidden></div>
+  <script type="module">
+    import { scoreAudio } from "./asr.js";
+    const sent = document.getElementById("sent");
+    const recBtn = document.getElementById("rec");
+    const listenBtn = document.getElementById("listen");
+    const status = document.getElementById("status");
+    const out = document.getElementById("out");
+    let recorder = null, chunks = [];
+
+    listenBtn.onclick = () => {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(sent.value);
+      u.lang = "en-GB";
+      speechSynthesis.speak(u);
+    };
+
+    recBtn.onclick = async () => {
+      if (recorder && recorder.state === "recording") {
+        recorder.stop();
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        recBtn.textContent = "Record";
+        recBtn.classList.remove("rec");
+        recBtn.disabled = true;
+        try {
+          const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+          const res = await scoreAudio(sent.value, blob, msg => { status.textContent = msg; }, "./phonemes.json");
+          status.textContent = `Scored (${res.accent}, ${res.latency_ms} ms): ${res.score}% — heard /${res.heard_ipa}/`;
+          out.hidden = false;
+          out.innerHTML = `<div class="words">${res.words.map(w => `<span class="w-${w.status}" title="/${w.expected_ipa}/ → /${w.heard_ipa}/">${w.word}</span>`).join(" ")}</div>` +
+            (res.errors.length ? `<ul>${res.errors.map(e => `<li><b>${e.message}</b><br><small>${e.tip}</small></li>`).join("")}</ul>` : `<p>All target sounds were clear!</p>`);
+        } catch (e) {
+          status.textContent = e.message || String(e);
+        }
+        recBtn.disabled = false;
+      };
+      recorder.start();
+      recBtn.textContent = "Stop";
+      recBtn.classList.add("rec");
+      status.textContent = "Recording… read the sentence aloud, then tap Stop.";
+    };
+  </script>
+</body>
+</html>

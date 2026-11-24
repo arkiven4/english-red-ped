@@ -11,7 +11,8 @@ The mistakes are the ones Indonesian speakers often make in English: missing *-s
 - **30 topics**: a Foundations unit, then one unit per lesson of the *Basic English for IELTS and TOEFL* course (lessons 2–20). The next topic unlocks at 70% mastery. **Jump here** unlocks the lesson your class is on; lessons then focus on it.
 - **Mastery per topic** is a moving average of your recent answers (recent answers count more).
 - **Each lesson** has 12 questions: mostly your current topic, plus your weakest *practiced* topics and mistakes that are due again.
-- **Practice tab**: a *weak-spot mix* of random topics, weighted toward your weakest practiced topics and the question types you miss most, plus a *review my mistakes* lesson.
+- **Practice tab**: a *weak-spot mix* of random topics, weighted toward your weakest practiced topics and the question types you miss most, a *review my mistakes* lesson, and **Say it** (phoneme-level pronunciation practice).
+- **Say it (pronunciation)**: read a sentence aloud and get per-word phoneme feedback on the sounds Indonesian learners often miss (final *-s / -es*, past *-ed*, *th* `/θ, ð/`, *v* vs *f*, and voiced final `/z/`). Powered by `onnx-community/wav2vec2-lv-60-espeak-cv-ft-ONNX` + `espeak-ng` (`en-GB` and `en-US`), running directly in the browser via ONNX Runtime Web and cached after the first load. Companion Hugging Face Space: https://huggingface.co/spaces/arkiven4/red-pen-asr.
 - **Mistakes come back** at the end of the lesson, then after 1, 3, 7 and 14 days.
 - **Scroll pass**: a daily goal of correct answers (5/10/20/30).
 - Progress is stored in the browser (`localStorage`). Use **Progress → Backup file → Export** now and then.

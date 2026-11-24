@@ -38,17 +38,22 @@ const cmpJSON = (x, y) => { const a = JSON.stringify(x), b = JSON.stringify(y); 
 function fresh(today) {
   return { v: SCHEMA, epoch: 0, topics: {}, unlocked: ["be_verb"], srs: {}, srsDone: {}, recent: [], days: [], cnt: {}, dayCnt: {},
     goal: 10, theme: "light", themeChosen: true, ts: {},
-    xp: 0, lessons: 0, answered: 0, right: 0, modeStats: {}, day: today, dayCorrect: 0, streak: 0, lastLesson: "" };
+    xp: 0, lessons: 0, answered: 0, right: 0, modeStats: {}, pronStats: {}, day: today, dayCorrect: 0, streak: 0, lastLesson: "" };
 }
 
 /* Recompute the derived fields from the synced ones. Mutates and returns s. */
 function derive(s, today) {
   for (const k of COUNT_KEYS) s[k] = 0;
   s.modeStats = {};
+  s.pronStats = {};
   for (const b of Object.values(s.cnt)) {
     for (const k of COUNT_KEYS) s[k] += b[k] || 0;
     for (const [m, x] of Object.entries(b.ms || {})) {
       const t = s.modeStats[m] || (s.modeStats[m] = { n: 0, c: 0 });
+      t.n += x.n || 0; t.c += x.c || 0;
+    }
+    for (const [cat, x] of Object.entries(b.ps || {})) {
+      const t = s.pronStats[cat] || (s.pronStats[cat] = { n: 0, c: 0 });
       t.n += x.n || 0; t.c += x.c || 0;
     }
   }
@@ -90,6 +95,10 @@ function bump(s, dev, key, n = 1) { bucket(s, dev)[key] += n; s[key] += n; }
 function bumpMode(s, dev, type, ok) {
   const b = bucket(s, dev), x = b.ms[type] || (b.ms[type] = { n: 0, c: 0 }); x.n++; if (ok) x.c++;
   const t = s.modeStats[type] || (s.modeStats[type] = { n: 0, c: 0 }); t.n++; if (ok) t.c++;
+}
+function bumpPron(s, dev, cat, ok) {
+  const b = bucket(s, dev), ps = b.ps || (b.ps = {}), x = ps[cat] || (ps[cat] = { n: 0, c: 0 }); x.n++; if (ok) x.c++;
+  const psTot = s.pronStats || (s.pronStats = {}), t = psTot[cat] || (psTot[cat] = { n: 0, c: 0 }); t.n++; if (ok) t.c++;
 }
 function addCorrectToday(s, dev, today) {
   const d = s.dayCnt[dev];
@@ -153,6 +162,11 @@ function merge(local, remote, { today, now }) {
     for (const k of COUNT_KEYS) o[k] = Math.max(x[k] || 0, y[k] || 0);
     const xm = x.ms || {}, ym = y.ms || {};
     for (const m of new Set([...Object.keys(xm), ...Object.keys(ym)])) o.ms[m] = clone(betterMode(xm[m], ym[m]));
+    const xp = x.ps || {}, yp = y.ps || {}, pKeys = [...new Set([...Object.keys(xp), ...Object.keys(yp)])];
+    if (pKeys.length) {
+      o.ps = {};
+      for (const c of pKeys) o.ps[c] = clone(betterMode(xp[c], yp[c]));
+    }
   }
 
   for (const dev of new Set([...Object.keys(a.dayCnt), ...Object.keys(b.dayCnt)])) {
@@ -173,10 +187,10 @@ function merge(local, remote, { today, now }) {
 /* What goes to the cloud: the state without device-local and derived fields. */
 function forCloud(s) {
   const o = clone(s);
-  for (const k of ["recent", ...COUNT_KEYS, "modeStats", "day", "dayCorrect", "streak", "lastLesson"]) delete o[k];
+  for (const k of ["recent", ...COUNT_KEYS, "modeStats", "pronStats", "day", "dayCorrect", "streak", "lastLesson"]) delete o[k];
   return o;
 }
 
-const api = { SCHEMA, fresh, migrate, derive, merge, forCloud, bump, bumpMode, addCorrectToday, markDay, setSetting, srsPut, srsFinish, addDays };
+const api = { SCHEMA, fresh, migrate, derive, merge, forCloud, bump, bumpMode, bumpPron, addCorrectToday, markDay, setSetting, srsPut, srsFinish, addDays };
 if (typeof module === "object" && module.exports) module.exports = api; else root.RedPenState = api;
 })(typeof self !== "undefined" ? self : this);
